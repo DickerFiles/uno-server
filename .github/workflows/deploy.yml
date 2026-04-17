@@ -1,0 +1,25 @@
+name: Deploy Uno-Servidor
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, docker]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: |
+          docker build -t uno-servidor:latest .
+
+      - name: Clean up old images
+        run: |
+          docker image prune -f
+
+      - name: Restart container
+        run: |
+          cd /srv/docker/stacks/apps/uno_servidor
+          docker compose up -d --force-recreate
