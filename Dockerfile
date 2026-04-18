@@ -1,4 +1,4 @@
-FROM eclipse-temurin:24-jdk-alpine
+FROM eclipse-temurin:21-jdk-alpine
 WORKDIR /app
 RUN apk add --no-cache maven
 COPY pom.xml .
