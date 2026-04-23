@@ -5,6 +5,7 @@ import org.borradoruno.shared.models.Jugador;
 import java.util.UUID;
 
 public class JuegoManager {
+
     private static JuegoManager instance;
     private Partida partidaActual;
 
@@ -19,13 +20,19 @@ public class JuegoManager {
         return instance;
     }
 
+    // Bloque de logica de creacion de partida
+    
     public void inicializarMazo() {
         org.borradoruno.shared.models.Mazo mazo = partidaActual.getMazo();
         mazo.getCartas().clear();
         for (org.borradoruno.shared.models.Color c : org.borradoruno.shared.models.Color.values()) {
-            if (c == org.borradoruno.shared.models.Color.NEGRO) continue;
+            if (c == org.borradoruno.shared.models.Color.NEGRO) {
+                continue;
+            }
             for (org.borradoruno.shared.models.Valor v : org.borradoruno.shared.models.Valor.values()) {
-                if (v == org.borradoruno.shared.models.Valor.COMODIN_COLOR || v == org.borradoruno.shared.models.Valor.COMODIN_MAS_CUATRO) continue;
+                if (v == org.borradoruno.shared.models.Valor.COMODIN_COLOR || v == org.borradoruno.shared.models.Valor.COMODIN_MAS_CUATRO) {
+                    continue;
+                }
                 // UNO tiene dos de cada especial y un 0
                 mazo.getCartas().add(new org.borradoruno.shared.models.Carta(c, v, false, 0));
                 if (v != org.borradoruno.shared.models.Valor.CERO) {
@@ -42,22 +49,30 @@ public class JuegoManager {
     }
 
     public synchronized void iniciarPartida() {
-        if (partidaActual.getJugadores().size() < 2) return;
-        
+        if (partidaActual.getJugadores().size() < 2) {
+            return;
+        }
+
         inicializarMazo();
         partidaActual.setEstado(org.borradoruno.shared.models.EstadoPartida.EN_CURSO);
-        
+
         // Repartir 7 cartas a cada uno
         for (Jugador j : partidaActual.getJugadores()) {
             for (int i = 0; i < 7; i++) {
                 j.getMano().add(partidaActual.getMazo().robar());
             }
         }
-        
+
         // Primera carta a la pila
         partidaActual.getPilaDescarte().agregarCarta(partidaActual.getMazo().robar());
     }
 
+    public synchronized void resetearPartida() {
+        this.partidaActual = new Partida(UUID.randomUUID().toString());
+    }
+
+    // bloque de logica de validacion de acciones
+    
     public synchronized boolean validarJugada(Jugador jugador, org.borradoruno.shared.models.Carta carta) {
         // 1. Validar que sea el turno del jugador
         int indiceJugador = partidaActual.getJugadores().indexOf(jugador);
@@ -68,19 +83,27 @@ public class JuegoManager {
 
         org.borradoruno.shared.models.PilaDescarte pila = partidaActual.getPilaDescarte();
         // 2. Si es comodín negro, es válido
-        if (carta.getColor() == org.borradoruno.shared.models.Color.NEGRO) return true;
-        
+        if (carta.getColor() == org.borradoruno.shared.models.Color.NEGRO) {
+            return true;
+        }
+
         // 3. Si la carta en la pila es negra (comodín recién tirado), permitir cualquier carta
-        if (pila.getColorActivo() == org.borradoruno.shared.models.Color.NEGRO) return true;
+        if (pila.getColorActivo() == org.borradoruno.shared.models.Color.NEGRO) {
+            return true;
+        }
 
         // 4. Si coincide color o valor
         boolean coincide = carta.getColor() == pila.getColorActivo() || carta.getValor() == pila.getValorActivo();
-        if (!coincide) System.out.println("Jugada rechazada: La carta " + carta.getValor() + " no coincide con la pila");
+        if (!coincide) {
+            System.out.println("Jugada rechazada: La carta " + carta.getValor() + " no coincide con la pila");
+        }
         return coincide;
     }
 
     public synchronized void procesarJugada(Jugador jugador, org.borradoruno.shared.models.Carta carta) {
-        if (!validarJugada(jugador, carta)) return;
+        if (!validarJugada(jugador, carta)) {
+            return;
+        }
 
         // Quitar de la mano (buscamos por valor y color para ser precisos)
         jugador.getMano().removeIf(c -> c.getColor() == carta.getColor() && c.getValor() == carta.getValor());
@@ -100,7 +123,9 @@ public class JuegoManager {
     }
 
     public synchronized void procesarJugadaComodin(Jugador jugador, org.borradoruno.shared.models.Carta comodin, org.borradoruno.shared.models.Color colorElegido) {
-        if (!validarJugada(jugador, comodin)) return;
+        if (!validarJugada(jugador, comodin)) {
+            return;
+        }
 
         // Quitar de la mano
         jugador.getMano().removeIf(c -> c.getColor() == comodin.getColor() && c.getValor() == comodin.getValor());
@@ -119,26 +144,21 @@ public class JuegoManager {
 
     private void aplicarEfectos(org.borradoruno.shared.models.Carta carta) {
         switch (carta.getValor()) {
-            case REVERSA:
+            case REVERSA ->
                 partidaActual.setSentidoJuego(
-                    partidaActual.getSentidoJuego() == org.borradoruno.shared.models.Sentido.HORARIO ? 
-                    org.borradoruno.shared.models.Sentido.ANTIHORARIO : org.borradoruno.shared.models.Sentido.HORARIO
+                        partidaActual.getSentidoJuego() == org.borradoruno.shared.models.Sentido.HORARIO
+                        ? org.borradoruno.shared.models.Sentido.ANTIHORARIO : org.borradoruno.shared.models.Sentido.HORARIO
                 );
-                break;
-            case MAS_DOS:
+            case MAS_DOS ->
                 partidaActual.setCartasAComer(partidaActual.getCartasAComer() + 2);
-                break;
-            case BLOQUEO:
-                // Saltamos un turno extra antes de avanzar el normal
+            case BLOQUEO -> // Saltamos un turno extra antes de avanzar el normal
                 avanzarTurno();
-                break;
-            case COMODIN_MAS_CUATRO:
+            case COMODIN_MAS_CUATRO ->
                 partidaActual.setCartasAComer(partidaActual.getCartasAComer() + 4);
-                break;
-            case COMODIN_COLOR:
-                // Aquí se debería pedir color, por ahora se deja el que tiene la carta
-                break;
+            case COMODIN_COLOR -> {
+            }
         }
+        // Aquí se debería pedir color, por ahora se deja el que tiene la carta
     }
 
     private void avanzarTurno() {
@@ -160,7 +180,7 @@ public class JuegoManager {
         org.borradoruno.shared.models.PilaDescarte pila = partidaActual.getPilaDescarte();
         java.util.List<org.borradoruno.shared.models.Carta> viejas = pila.getCartas();
         org.borradoruno.shared.models.Carta actual = viejas.remove(viejas.size() - 1);
-        
+
         partidaActual.getMazo().getCartas().addAll(viejas);
         partidaActual.getMazo().barajar();
         viejas.clear();
@@ -172,7 +192,7 @@ public class JuegoManager {
     }
 
     public synchronized void agregarJugador(Jugador jugador) {
-        if (partidaActual.getJugadores().size() == 0) {
+        if (partidaActual.getJugadores().isEmpty()) {
             jugador.setEsAnfitrion(true);
         }
         partidaActual.getJugadores().add(jugador);

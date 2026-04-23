@@ -7,7 +7,7 @@ public class ServerMain {
         // Leer puerto de variable de entorno (Railway lo configura automáticamente)
         // Default a 12345 para desarrollo local
         String portStr = System.getenv("PORT");
-        int port = 443;
+        int port = 5050;
 
         if (portStr != null && !portStr.isEmpty()) {
             try {

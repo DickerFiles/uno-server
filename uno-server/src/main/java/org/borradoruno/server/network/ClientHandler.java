@@ -15,6 +15,7 @@ import java.io.PrintWriter;
 import java.net.Socket;
 
 public class ClientHandler implements Runnable {
+
     private Socket socket;
     private Server server;
     private PrintWriter out;
@@ -70,10 +71,17 @@ public class ClientHandler implements Runnable {
 
     private void procesarMensaje(Mensaje mensaje) {
         System.out.println("Comando recibido: " + mensaje.getTipo() + " con datos: " + mensaje.getDatos());
+
+        //Validacion: verifica que el usuario este en una sala antes de cualquier otro comando
+        if (this.jugador == null && !mensaje.getTipo().equals("CREATE") && !mensaje.getTipo().equals("JOIN")) {
+            System.out.println("el usuario primero debe pertenecer a una sala ");
+            enviarError("Debes unirte a una sala primero");
+            return;
+        }
+
         try {
             switch (mensaje.getTipo()) {
-                case "CREATE":
-                case "JOIN":
+                case "CREATE", "JOIN" -> {
                     // Validación: Verificar que datos no sea null
                     if (mensaje.getDatos() == null) {
                         enviarError("El nombre no puede ser null");
@@ -96,12 +104,12 @@ public class ClientHandler implements Runnable {
                     }
 
                     if (mensaje.getTipo().equals("CREATE")) {
+
                         // Si no hay jugadores, reiniciamos la partida para una nueva sesión limpia
                         if (JuegoManager.getInstance().getPartidaActual().getJugadores().isEmpty()) {
-                            JuegoManager.getInstance().iniciarPartida();
-                            JuegoManager.getInstance().getPartidaActual().getJugadores().clear();
-                            JuegoManager.getInstance().getPartidaActual().setEstado(EstadoPartida.ESPERANDO_JUGADORES);
+                            JuegoManager.getInstance().resetearPartida();
                         }
+
                         this.jugador = new Jugador(nombre, socket.getRemoteSocketAddress().toString());
                         JuegoManager.getInstance().agregarJugador(this.jugador);
                         server.broadcast(gson.toJson(new Mensaje("ESTADO_PARTIDA", JuegoManager.getInstance().getPartidaActual())));
@@ -116,8 +124,8 @@ public class ClientHandler implements Runnable {
                         JuegoManager.getInstance().agregarJugador(this.jugador);
                         server.broadcast(gson.toJson(new Mensaje("ESTADO_PARTIDA", JuegoManager.getInstance().getPartidaActual())));
                     }
-                    break;
-                case "SET_MAX_JUGADORES":
+                }
+                case "SET_MAX_JUGADORES" -> {
                     // Validación: Datos no null
                     if (mensaje.getDatos() == null) {
                         enviarError("El valor de max jugadores no puede ser null");
@@ -150,20 +158,20 @@ public class ClientHandler implements Runnable {
                     JuegoManager.getInstance().setMaxJugadores(max);
                     System.out.println("Nuevo límite de jugadores: " + max);
                     server.broadcast(gson.toJson(new Mensaje("ESTADO_PARTIDA", JuegoManager.getInstance().getPartidaActual())));
-                    break;
-                case "INICIAR_PARTIDA":
+                }
+                case "INICIAR_PARTIDA" -> {
                     JuegoManager.getInstance().iniciarPartida();
                     server.broadcast(gson.toJson(new Mensaje("ESTADO_PARTIDA", JuegoManager.getInstance().getPartidaActual())));
-                    break;
-                case "TIRAR_CARTA":
+                }
+                case "TIRAR_CARTA" -> {
                     // Convertimos explícitamente los datos a un objeto Carta
                     String cJson = gson.toJson(mensaje.getDatos());
                     org.borradoruno.shared.models.Carta cartaTirada = gson.fromJson(cJson, org.borradoruno.shared.models.Carta.class);
 
                     JuegoManager.getInstance().procesarJugada(this.jugador, cartaTirada);
                     server.broadcast(gson.toJson(new Mensaje("ESTADO_PARTIDA", JuegoManager.getInstance().getPartidaActual())));
-                    break;
-                case "TIRAR_COMODIN":
+                }
+                case "TIRAR_COMODIN" -> {
                     try {
                         // El mensaje contiene [Carta, Color]
                         JsonArray arr = gson.toJsonTree(mensaje.getDatos()).getAsJsonArray();
@@ -194,23 +202,22 @@ public class ClientHandler implements Runnable {
                         enviarError("Error procesando comodín: " + e.getMessage());
                         return;
                     }
-                    break;
-                case "ROBAR_CARTA":
+                }
+                case "ROBAR_CARTA" -> {
                     JuegoManager.getInstance().robarCarta(this.jugador);
                     server.broadcast(gson.toJson(new Mensaje("ESTADO_PARTIDA", JuegoManager.getInstance().getPartidaActual())));
-                    break;
-                case "DECIR_UNO":
+                }
+                case "DECIR_UNO" -> {
                     JuegoManager.getInstance().marcarUno(this.jugador);
                     server.broadcast(gson.toJson(new Mensaje("ESTADO_PARTIDA", JuegoManager.getInstance().getPartidaActual())));
                     System.out.println(this.jugador.getNombre() + " dijo UNO!");
-                    break;
-                case "ABANDONAR_SALA":
+                }
+                case "ABANDONAR_SALA" -> {
                     JuegoManager.getInstance().removerJugador(this.jugador);
                     server.broadcast(gson.toJson(new Mensaje("ESTADO_PARTIDA", JuegoManager.getInstance().getPartidaActual())));
-                    break;
-                case "SOLICITAR_ESTADO":
+                }
+                case "SOLICITAR_ESTADO" ->
                     enviar(gson.toJson(new Mensaje("ESTADO_PARTIDA", JuegoManager.getInstance().getPartidaActual())));
-                    break;
             }
         } catch (Exception e) {
             System.err.println("Error procesando mensaje: " + e.getMessage());
