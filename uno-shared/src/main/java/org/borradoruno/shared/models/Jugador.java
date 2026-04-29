@@ -8,6 +8,7 @@ public class Jugador {
     private String idSesion;
     private boolean esAnfitrion;
     private boolean dijoUNO;
+    private boolean listo;
     private int puntos;
     private List<Carta> mano;
 
@@ -16,6 +17,7 @@ public class Jugador {
         this.idSesion = idSesion;
         this.esAnfitrion = false;
         this.dijoUNO = false;
+        this.listo = false;
         this.puntos = 0;
         this.mano = new ArrayList<>();
     }
@@ -29,6 +31,8 @@ public class Jugador {
     public void setEsAnfitrion(boolean esAnfitrion) { this.esAnfitrion = esAnfitrion; }
     public boolean isDijoUNO() { return dijoUNO; }
     public void setDijoUNO(boolean dijoUNO) { this.dijoUNO = dijoUNO; }
+    public boolean isListo() { return listo; }
+    public void setListo(boolean listo) { this.listo = listo; }
     public int getPuntos() { return puntos; }
     public void setPuntos(int puntos) { this.puntos = puntos; }
     public List<Carta> getMano() { return mano; }

@@ -4,13 +4,12 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import org.borradoruno.server.logic.JuegoManager;
 import org.borradoruno.server.network.ClientHandler;
+import org.borradoruno.server.observer.PartidaPublisher;
 import org.borradoruno.server.validation.GameStateValidator;
 import org.borradoruno.server.validation.InputValidator;
 import org.borradoruno.server.validation.ValidationResult;
 import org.borradoruno.shared.models.*;
 import org.borradoruno.shared.network.Mensaje;
-
-import java.net.Socket;
 
 public class GameController {
 
@@ -18,7 +17,7 @@ public class GameController {
 
     public void procesarMensaje(Mensaje mensaje, ClientHandler handler) {
         String tipo = mensaje.getTipo();
-        System.out.println("Comando recibido: " + tipo + " con datos: " + mensaje.getDatos());
+        System.out.println("Comando: " + tipo + " de " + handler.getRemoteAddress());
 
         boolean requiereJugador = !tipo.equals("CREATE")
                 && !tipo.equals("JOIN")
@@ -31,16 +30,18 @@ public class GameController {
 
         try {
             switch (tipo) {
-                case "CREATE" -> manejarCreate(mensaje, handler);
-                case "JOIN" -> manejarJoin(mensaje, handler);
+                case "CREATE"            -> manejarCreate(mensaje, handler);
+                case "JOIN"              -> manejarJoin(mensaje, handler);
                 case "SET_MAX_JUGADORES" -> manejarSetMax(mensaje, handler);
-                case "INICIAR_PARTIDA" -> manejarIniciarPartida(handler);
-                case "TIRAR_CARTA" -> manejarTirarCarta(mensaje, handler);
-                case "TIRAR_COMODIN" -> manejarTirarComodin(mensaje, handler);
-                case "ROBAR_CARTA" -> manejarRobar(handler);
-                case "DECIR_UNO" -> manejarDecirUno(handler);
-                case "ABANDONAR_SALA" -> manejarAbandonar(handler);
-                case "SOLICITAR_ESTADO" -> manejarSolicitarEstado(handler);
+                case "INICIAR_PARTIDA"   -> manejarIniciarPartida(handler);
+                case "MARCAR_LISTO"      -> manejarMarcarListo(handler);
+                case "TIRAR_CARTA"       -> manejarTirarCarta(mensaje, handler);
+                case "TIRAR_COMODIN"     -> manejarTirarComodin(mensaje, handler);
+                case "ROBAR_CARTA"       -> manejarRobar(handler);
+                case "PASAR_TURNO"       -> manejarPasarTurno(handler);
+                case "DECIR_UNO"         -> manejarDecirUno(handler);
+                case "ABANDONAR_SALA"    -> manejarAbandonar(handler);
+                case "SOLICITAR_ESTADO"  -> manejarSolicitarEstado(handler);
                 default -> handler.enviarError("Comando desconocido: " + tipo);
             }
         } catch (Exception e) {
@@ -60,41 +61,65 @@ public class GameController {
             handler.enviarError(nicknameResult.getErrorMessage());
             return;
         }
-        if (isNicknameTaken(nombre)) {
-            handler.enviarError("El apodo '" + nombre + "' ya está en uso");
-            return;
-        }
-        if (JuegoManager.getInstance().getPartidaActual().getJugadores().isEmpty()) {
-            JuegoManager.getInstance().resetearPartida();
-        }
+
+        Partida nuevaSala = JuegoManager.getInstance().crearSala();
         Jugador jugador = new Jugador(nombre, handler.getRemoteAddress());
+
         handler.setJugador(jugador);
-        JuegoManager.getInstance().agregarJugador(jugador);
+        handler.setCodigoSala(nuevaSala.getCodigoSala());
+        JuegoManager.getInstance().getPublisher(nuevaSala.getCodigoSala()).suscribir(handler);
+        JuegoManager.getInstance().agregarJugador(nuevaSala.getCodigoSala(), jugador);
     }
 
     private void manejarJoin(Mensaje mensaje, ClientHandler handler) {
         if (mensaje.getDatos() == null) {
-            handler.enviarError("El nombre no puede ser null");
+            handler.enviarError("JOIN requiere [nombre, codigoSala]");
             return;
         }
-        String nombre = (String) mensaje.getDatos();
+        JsonArray arr;
+        try {
+            arr = gson.toJsonTree(mensaje.getDatos()).getAsJsonArray();
+        } catch (Exception e) {
+            handler.enviarError("JOIN requiere datos en formato [nombre, codigoSala]");
+            return;
+        }
+        if (arr.size() != 2) {
+            handler.enviarError("JOIN requiere [nombre, codigoSala]");
+            return;
+        }
+
+        String nombre = arr.get(0).getAsString();
+        String codigoSala = arr.get(1).getAsString();
+
         ValidationResult nicknameResult = InputValidator.validateNickname(nombre);
         if (!nicknameResult.isValid()) {
             handler.enviarError(nicknameResult.getErrorMessage());
             return;
         }
-        if (isNicknameTaken(nombre)) {
-            handler.enviarError("El apodo '" + nombre + "' ya está en uso");
+
+        Partida sala = JuegoManager.getInstance().getPartida(codigoSala);
+        if (sala == null) {
+            handler.enviarError("Sala '" + codigoSala + "' no existe");
             return;
         }
-        Partida p = JuegoManager.getInstance().getPartidaActual();
-        if (p.getJugadores().size() >= p.getMaxJugadores()) {
+        if (sala.getEstado() != EstadoPartida.ESPERANDO_JUGADORES) {
+            handler.enviarError("La partida ya inició");
+            return;
+        }
+        if (sala.getJugadores().size() >= sala.getMaxJugadores()) {
             handler.enviarError("La sala está llena");
             return;
         }
+        if (isNicknameTaken(codigoSala, nombre)) {
+            handler.enviarError("El apodo '" + nombre + "' ya está en uso en esta sala");
+            return;
+        }
+
         Jugador jugador = new Jugador(nombre, handler.getRemoteAddress());
         handler.setJugador(jugador);
-        JuegoManager.getInstance().agregarJugador(jugador);
+        handler.setCodigoSala(codigoSala);
+        JuegoManager.getInstance().getPublisher(codigoSala).suscribir(handler);
+        JuegoManager.getInstance().agregarJugador(codigoSala, jugador);
     }
 
     private void manejarSetMax(Mensaje mensaje, ClientHandler handler) {
@@ -121,18 +146,33 @@ public class GameController {
             handler.enviarError(maxResult.getErrorMessage());
             return;
         }
-        System.out.println("Nuevo límite de jugadores: " + max);
-        JuegoManager.getInstance().setMaxJugadores(max);
+        JuegoManager.getInstance().setMaxJugadores(handler.getCodigoSala(), max);
     }
 
     private void manejarIniciarPartida(ClientHandler handler) {
-        ValidationResult minPlayers = GameStateValidator.validateMinPlayers(
-                JuegoManager.getInstance().getPartidaActual(), 2);
+        if (!handler.getJugador().isEsAnfitrion()) {
+            handler.enviarError("Solo el anfitrión puede iniciar la partida");
+            return;
+        }
+        String codigo = handler.getCodigoSala();
+        Partida partida = JuegoManager.getInstance().getPartida(codigo);
+        if (partida == null) {
+            handler.enviarError("Sala no encontrada");
+            return;
+        }
+        ValidationResult minPlayers = GameStateValidator.validateMinPlayers(partida, 2);
         if (!minPlayers.isValid()) {
             handler.enviarError(minPlayers.getErrorMessage());
             return;
         }
-        JuegoManager.getInstance().iniciarPartida();
+        boolean iniciada = JuegoManager.getInstance().iniciarPartida(codigo);
+        if (!iniciada) {
+            handler.enviarError("No se puede iniciar: faltan jugadores que marquen 'Listo'");
+        }
+    }
+
+    private void manejarMarcarListo(ClientHandler handler) {
+        JuegoManager.getInstance().marcarListo(handler.getCodigoSala(), handler.getJugador());
     }
 
     private void manejarTirarCarta(Mensaje mensaje, ClientHandler handler) {
@@ -143,7 +183,7 @@ public class GameController {
             handler.enviarError(inHand.getErrorMessage());
             return;
         }
-        JuegoManager.getInstance().procesarJugada(handler.getJugador(), cartaTirada);
+        JuegoManager.getInstance().procesarJugada(handler.getCodigoSala(), handler.getJugador(), cartaTirada);
     }
 
     private void manejarTirarComodin(Mensaje mensaje, ClientHandler handler) {
@@ -161,7 +201,8 @@ public class GameController {
                 return;
             }
             Color colorElegido = Color.valueOf(colorStr.toUpperCase());
-            JuegoManager.getInstance().procesarJugadaComodin(handler.getJugador(), comodin, colorElegido);
+            JuegoManager.getInstance().procesarJugadaComodin(
+                    handler.getCodigoSala(), handler.getJugador(), comodin, colorElegido);
         } catch (Exception e) {
             System.err.println("Error procesando comodín: " + e.getMessage());
             handler.enviarError("Error procesando comodín: " + e.getMessage());
@@ -169,26 +210,39 @@ public class GameController {
     }
 
     private void manejarRobar(ClientHandler handler) {
-        JuegoManager.getInstance().robarCarta(handler.getJugador());
+        boolean ok = JuegoManager.getInstance().robarCarta(handler.getCodigoSala(), handler.getJugador());
+        if (!ok) handler.enviarError("No es tu turno para robar");
+    }
+
+    private void manejarPasarTurno(ClientHandler handler) {
+        boolean ok = JuegoManager.getInstance().pasarTurno(handler.getCodigoSala(), handler.getJugador());
+        if (!ok) handler.enviarError("No puedes pasar el turno ahora");
     }
 
     private void manejarDecirUno(ClientHandler handler) {
-        JuegoManager.getInstance().marcarUno(handler.getJugador());
+        JuegoManager.getInstance().marcarUno(handler.getCodigoSala(), handler.getJugador());
         System.out.println(handler.getJugador().getNombre() + " dijo UNO!");
     }
 
     private void manejarAbandonar(ClientHandler handler) {
-        JuegoManager.getInstance().removerJugador(handler.getJugador());
+        String codigo = handler.getCodigoSala();
+        if (codigo != null && handler.getJugador() != null) {
+            PartidaPublisher pub = JuegoManager.getInstance().getPublisher(codigo);
+            if (pub != null) pub.desuscribir(handler);
+            JuegoManager.getInstance().removerJugador(codigo, handler.getJugador());
+        }
         handler.setJugador(null);
+        handler.setCodigoSala(null);
     }
 
     private void manejarSolicitarEstado(ClientHandler handler) {
-        handler.enviar(gson.toJson(new Mensaje("ESTADO_PARTIDA",
-                JuegoManager.getInstance().getPartidaActual())));
+        String codigo = handler.getCodigoSala();
+        Partida partida = codigo != null ? JuegoManager.getInstance().getPartida(codigo) : null;
+        handler.enviar(gson.toJson(new Mensaje("ESTADO_PARTIDA", partida)));
     }
 
-    private boolean isNicknameTaken(String nombre) {
-        Partida partida = JuegoManager.getInstance().getPartidaActual();
+    private boolean isNicknameTaken(String codigoSala, String nombre) {
+        Partida partida = JuegoManager.getInstance().getPartida(codigoSala);
         if (partida == null || partida.getJugadores() == null) return false;
         return partida.getJugadores().stream().anyMatch(j -> j.getNombre().equalsIgnoreCase(nombre));
     }
