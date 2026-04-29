@@ -23,3 +23,8 @@ jobs:
         run: |
           cd /srv/docker/stacks/apps/uno_servidor
           docker compose up -d --force-recreate
+
+      - name: Verificar logs de arranque
+        run: |
+          sleep 5
+          docker compose -f /srv/docker/stacks/apps/uno_servidor/docker-compose.yml logs --tail=100
