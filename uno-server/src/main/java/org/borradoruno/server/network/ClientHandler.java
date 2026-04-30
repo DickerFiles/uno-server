@@ -21,7 +21,17 @@ public class ClientHandler implements Runnable, PartidaObserver {
     private static final int MAX_INVALID_MESSAGES = 3;
     private static final int MAX_HANDSHAKE_ATTEMPTS = 3;
     private static final String HANDSHAKE_VALUE = "UNO-CLIENT-V1";
-    private static final int SOCKET_TIMEOUT_MS = 60000; // TAREA 1: 60s para redes corporativas con picos de lag
+    private static final int SOCKET_TIMEOUT_MS = 60000;
+
+    private static final String[] KNOWN_BOT_PATTERNS = {
+        "GET ", "POST ", "PUT ", "DELETE ", "OPTIONS ", "HEAD ",
+        "RTSP", "MQTT", "LZR",
+        "fox a", "fox.version",
+        "PING", "*1\r\n", "*2\r\n",
+        "SMBr", "Cookie: mstshash",
+        "stats",
+        "Host:", "User-Agent:", "Accept:"
+    };
 
     private final Socket socket;
     private final Server server;
@@ -64,8 +74,12 @@ public class ClientHandler implements Runnable, PartidaObserver {
                     break;
                 }
 
-                // TAREA 2+3: bloque pre-handshake con logging detallado y tolerancia a basura de proxy
                 if (!handshakeOk) {
+                    // Descartar bots conocidos sin loguear ruido
+                    if (esBotConocido(inputLine)) {
+                        break;
+                    }
+
                     System.out.println("[Raw] Bytes recibidos de " + socket.getInetAddress()
                             + ": [" + inputLine + "]");
 
@@ -130,19 +144,37 @@ public class ClientHandler implements Runnable, PartidaObserver {
                 }
             }
         } catch (SocketTimeoutException e) {
-            // TAREA 5
-            System.out.println("[Conexión] Timeout: " + socket.getInetAddress()
-                    + " (sin actividad por " + (SOCKET_TIMEOUT_MS / 1000) + "s)");
+            if (handshakeOk) {
+                System.out.println("[Conexión] Timeout: " + socket.getInetAddress()
+                        + " (sin actividad por " + (SOCKET_TIMEOUT_MS / 1000) + "s)");
+            }
         } catch (java.net.SocketException e) {
-            // TAREA 5: Connection reset, broken pipe, etc.
-            System.out.println("[Conexión] Reset/cerrada por cliente: " + socket.getInetAddress()
-                    + " - " + e.getMessage());
+            if (handshakeOk) {
+                System.out.println("[Conexión] Reset/cerrada por cliente: " + socket.getInetAddress()
+                        + " - " + e.getMessage());
+            }
         } catch (IOException e) {
-            System.out.println("[Conexión] Error de I/O: " + socket.getInetAddress()
-                    + " - " + e.getMessage());
+            if (handshakeOk) {
+                System.out.println("[Conexión] Error de I/O: " + socket.getInetAddress()
+                        + " - " + e.getMessage());
+            }
         } finally {
             limpiarConexion();
         }
+    }
+
+    private boolean esBotConocido(String input) {
+        if (input == null || input.isEmpty()) return false;
+        String prefix = input.length() > 50 ? input.substring(0, 50) : input;
+        for (String pattern : KNOWN_BOT_PATTERNS) {
+            if (prefix.startsWith(pattern)) return true;
+        }
+        char first = input.charAt(0);
+        // TLS handshake (byte 0x16 = 22)
+        if (first == 22) return true;
+        // Byte no imprimible que no sea tabulador/newline/CR
+        if (first < 32 && first != '\t' && first != '\n' && first != '\r') return true;
+        return false;
     }
 
     private void limpiarConexion() {
@@ -150,11 +182,6 @@ public class ClientHandler implements Runnable, PartidaObserver {
             try {
                 JuegoManager.getInstance().removerJugador(codigoSala, jugador);
                 System.out.println("Jugador " + jugador.getNombre() + " removido de sala " + codigoSala);
-
-                Partida sala = JuegoManager.getInstance().getPartida(codigoSala);
-                if (sala != null && sala.getJugadores().isEmpty()) {
-                    JuegoManager.getInstance().eliminarSala(codigoSala);
-                }
             } catch (Exception e) {
                 System.err.println("Error limpiando jugador: " + e.getMessage());
             }

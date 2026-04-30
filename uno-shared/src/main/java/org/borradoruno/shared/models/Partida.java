@@ -15,6 +15,7 @@ public class Partida {
     private Mazo mazo;
     private PilaDescarte pilaDescarte;
     private long turnoIniciadoEn;
+    private long timestampDesconexionAnfitrion = 0;
 
     public Partida(String idPartida) {
         this.idPartida = idPartida;
@@ -52,4 +53,6 @@ public class Partida {
     public void setPilaDescarte(PilaDescarte pilaDescarte) { this.pilaDescarte = pilaDescarte; }
     public long getTurnoIniciadoEn() { return turnoIniciadoEn; }
     public void setTurnoIniciadoEn(long turnoIniciadoEn) { this.turnoIniciadoEn = turnoIniciadoEn; }
+    public long getTimestampDesconexionAnfitrion() { return timestampDesconexionAnfitrion; }
+    public void setTimestampDesconexionAnfitrion(long t) { this.timestampDesconexionAnfitrion = t; }
 }

@@ -326,19 +326,44 @@ public class JuegoManager {
         publishers.get(codigoSala).notificarCambio(partida);
     }
 
+    private static final long GRACIA_RECONEXION_MS = 30_000;
+
     public synchronized void removerJugador(String codigoSala, Jugador jugador) {
         Partida partida = partidas.get(codigoSala);
         if (partida == null) return;
         boolean eraAnfitrion = jugador.isEsAnfitrion();
         partida.getJugadores().remove(jugador);
         if (partida.getJugadores().isEmpty()) {
-            eliminarSala(codigoSala);
+            System.out.println("Sala " + codigoSala + " quedó vacía, esperando "
+                    + (GRACIA_RECONEXION_MS / 1000) + "s por reconexión...");
+            partida.setTimestampDesconexionAnfitrion(System.currentTimeMillis());
+            programarEliminacionSala(codigoSala);
             return;
         }
         if (eraAnfitrion) {
             partida.getJugadores().get(0).setEsAnfitrion(true);
         }
         publishers.get(codigoSala).notificarCambio(partida);
+    }
+
+    private void programarEliminacionSala(String codigoSala) {
+        java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r);
+            t.setDaemon(true);
+            return t;
+        }).schedule(() -> {
+            synchronized (this) {
+                Partida partida = partidas.get(codigoSala);
+                if (partida == null) return;
+                if (partida.getJugadores().isEmpty()) {
+                    System.out.println("Sala " + codigoSala + " eliminada tras "
+                            + (GRACIA_RECONEXION_MS / 1000) + "s sin reconexión");
+                    eliminarSala(codigoSala);
+                } else {
+                    System.out.println("Sala " + codigoSala + " mantenida (alguien se reconectó)");
+                }
+            }
+        }, GRACIA_RECONEXION_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
     }
 
     public synchronized void marcarUno(String codigoSala, Jugador jugador) {

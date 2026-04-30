@@ -126,9 +126,24 @@ public class GameController {
 
         Partida sala = JuegoManager.getInstance().getPartida(codigoSala);
         if (sala == null) {
-            handler.enviarError("Sala '" + codigoSala + "' no existe");
+            handler.enviarError("Sala '" + codigoSala + "' no existe o ya expiró");
             return;
         }
+
+        // Sala en periodo de gracia (vacía): reconectar como anfitrión
+        if (sala.getJugadores().isEmpty()) {
+            System.out.println("Cliente reconectándose a sala vacía: " + codigoSala);
+            Avatar avatar = parseAvatar(avatarStr);
+            Jugador jugador = new Jugador(nombre, handler.getRemoteAddress());
+            jugador.setAvatar(avatar);
+            jugador.setEsAnfitrion(true);
+            handler.setJugador(jugador);
+            handler.setCodigoSala(codigoSala);
+            JuegoManager.getInstance().getPublisher(codigoSala).suscribir(handler);
+            JuegoManager.getInstance().agregarJugador(codigoSala, jugador);
+            return;
+        }
+
         if (sala.getEstado() != EstadoPartida.ESPERANDO_JUGADORES) {
             handler.enviarError("La partida ya inició");
             return;
@@ -142,19 +157,20 @@ public class GameController {
             return;
         }
 
-        Avatar avatar;
-        try {
-            avatar = Avatar.valueOf(avatarStr.toUpperCase());
-        } catch (IllegalArgumentException e) {
-            avatar = Avatar.AZUL;
-        }
-
         Jugador jugador = new Jugador(nombre, handler.getRemoteAddress());
-        jugador.setAvatar(avatar);
+        jugador.setAvatar(parseAvatar(avatarStr));
         handler.setJugador(jugador);
         handler.setCodigoSala(codigoSala);
         JuegoManager.getInstance().getPublisher(codigoSala).suscribir(handler);
         JuegoManager.getInstance().agregarJugador(codigoSala, jugador);
+    }
+
+    private Avatar parseAvatar(String avatarStr) {
+        try {
+            return Avatar.valueOf(avatarStr.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return Avatar.AZUL;
+        }
     }
 
     private void manejarSetMax(Mensaje mensaje, ClientHandler handler) {
