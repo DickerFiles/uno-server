@@ -39,7 +39,6 @@ public class GameController {
                 case "TIRAR_CARTA"       -> manejarTirarCarta(mensaje, handler);
                 case "TIRAR_COMODIN"     -> manejarTirarComodin(mensaje, handler);
                 case "ROBAR_CARTA"       -> manejarRobar(handler);
-                case "PASAR_TURNO"       -> manejarPasarTurno(handler);
                 case "DECIR_UNO"         -> manejarDecirUno(handler);
                 case "ABANDONAR_SALA"    -> manejarAbandonar(handler);
                 case "SOLICITAR_ESTADO"  -> manejarSolicitarEstado(handler);
@@ -247,11 +246,6 @@ public class GameController {
     private void manejarRobar(ClientHandler handler) {
         boolean ok = JuegoManager.getInstance().robarCarta(handler.getCodigoSala(), handler.getJugador());
         if (!ok) handler.enviarError("No es tu turno para robar");
-    }
-
-    private void manejarPasarTurno(ClientHandler handler) {
-        boolean ok = JuegoManager.getInstance().pasarTurno(handler.getCodigoSala(), handler.getJugador());
-        if (!ok) handler.enviarError("No puedes pasar el turno ahora");
     }
 
     private void manejarDecirUno(ClientHandler handler) {

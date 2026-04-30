@@ -168,7 +168,6 @@ public class JuegoManager {
         partida.setTurnoActual((partida.getTurnoActual() + paso + total) % total);
     }
 
-    // Roba una carta sin avanzar el turno. El jugador puede tirarla o llamar PASAR_TURNO.
     public synchronized boolean robarCarta(String codigoSala, Jugador jugador) {
         Partida partida = partidas.get(codigoSala);
         if (partida == null) return false;
@@ -183,17 +182,8 @@ public class JuegoManager {
         Carta carta = partida.getMazo().robar();
         if (carta != null) {
             jugador.getMano().add(carta);
+            System.out.println(jugador.getNombre() + " robó 1 carta");
         }
-        publishers.get(codigoSala).notificarCambio(partida);
-        return true;
-    }
-
-    public synchronized boolean pasarTurno(String codigoSala, Jugador jugador) {
-        Partida partida = partidas.get(codigoSala);
-        if (partida == null) return false;
-
-        int indiceJugador = partida.getJugadores().indexOf(jugador);
-        if (indiceJugador != partida.getTurnoActual()) return false;
 
         avanzarTurno(partida);
         publishers.get(codigoSala).notificarCambio(partida);
