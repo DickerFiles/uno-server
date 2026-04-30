@@ -20,7 +20,10 @@ public class Server {
             System.out.println("Servidor de UNO iniciado en el puerto " + port);
             while (true) {
                 Socket socket = serverSocket.accept();
-                System.out.println("Nuevo cliente conectado: " + socket.getInetAddress());
+                System.out.println("─────────────────────────────────────────");
+                System.out.println("[Server] Nuevo cliente: " + socket.getInetAddress()
+                        + ":" + socket.getPort()
+                        + " (total clientes: " + (clientes.size() + 1) + ")");
                 ClientHandler handler = new ClientHandler(socket, this);
                 clientes.add(handler);
                 new Thread(handler).start();
