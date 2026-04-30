@@ -40,6 +40,7 @@ public class JuegoManager {
     }
 
     public synchronized void eliminarSala(String codigoSala) {
+        TurnoScheduler.getInstance().cancelarTurno(codigoSala);
         partidas.remove(codigoSala);
         publishers.remove(codigoSala);
         System.out.println("Sala eliminada: " + codigoSala);
@@ -83,6 +84,8 @@ public class JuegoManager {
             }
         }
         partida.getPilaDescarte().agregarCarta(partida.getMazo().robar());
+        partida.setTurnoIniciadoEn(System.currentTimeMillis());
+        iniciarTimerDeTurno(codigoSala);
         publishers.get(codigoSala).notificarCambio(partida);
         return true;
     }
@@ -109,15 +112,28 @@ public class JuegoManager {
         Partida partida = partidas.get(codigoSala);
         if (partida == null) return;
         if (!validarJugada(codigoSala, jugador, carta)) return;
+
+        aplicarPenalizacionUnoSiAplica(partida);
+
         jugador.getMano().removeIf(c -> c.getColor() == carta.getColor() && c.getValor() == carta.getValor());
+        if (jugador.getMano().size() != 1) {
+            jugador.setDijoUNO(false);
+        }
+
         partida.getPilaDescarte().agregarCarta(carta);
         if (carta.getColor() == Color.NEGRO) {
             partida.getPilaDescarte().setColorActivo(Color.ROJO);
         }
         aplicarEfectos(partida, carta);
-        verificarGanador(partida, jugador);
+        verificarGanador(partida, jugador, codigoSala);
         avanzarTurno(partida);
         aplicarCartasPendientes(codigoSala, partida);
+
+        if (partida.getEstado() == EstadoPartida.EN_CURSO) {
+            partida.setTurnoIniciadoEn(System.currentTimeMillis());
+            iniciarTimerDeTurno(codigoSala);
+        }
+
         publishers.get(codigoSala).notificarCambio(partida);
         System.out.println("Jugada de " + jugador.getNombre() + ". Turno: " + partida.getTurnoActual());
     }
@@ -126,13 +142,26 @@ public class JuegoManager {
         Partida partida = partidas.get(codigoSala);
         if (partida == null) return;
         if (!validarJugada(codigoSala, jugador, comodin)) return;
+
+        aplicarPenalizacionUnoSiAplica(partida);
+
         jugador.getMano().removeIf(c -> c.getColor() == comodin.getColor() && c.getValor() == comodin.getValor());
+        if (jugador.getMano().size() != 1) {
+            jugador.setDijoUNO(false);
+        }
+
         partida.getPilaDescarte().agregarCarta(comodin);
         partida.getPilaDescarte().setColorActivo(colorElegido);
         aplicarEfectos(partida, comodin);
-        verificarGanador(partida, jugador);
+        verificarGanador(partida, jugador, codigoSala);
         avanzarTurno(partida);
         aplicarCartasPendientes(codigoSala, partida);
+
+        if (partida.getEstado() == EstadoPartida.EN_CURSO) {
+            partida.setTurnoIniciadoEn(System.currentTimeMillis());
+            iniciarTimerDeTurno(codigoSala);
+        }
+
         publishers.get(codigoSala).notificarCambio(partida);
         System.out.println("Comodín de " + jugador.getNombre() + ". Color: " + colorElegido);
     }
@@ -178,14 +207,21 @@ public class JuegoManager {
             return false;
         }
 
+        aplicarPenalizacionUnoSiAplica(partida);
+
         if (partida.getMazo().getCartasRestantes() == 0) reciclarMazo(partida);
         Carta carta = partida.getMazo().robar();
         if (carta != null) {
             jugador.getMano().add(carta);
             System.out.println(jugador.getNombre() + " robó 1 carta");
         }
+        if (jugador.getMano().size() != 1) {
+            jugador.setDijoUNO(false);
+        }
 
         avanzarTurno(partida);
+        partida.setTurnoIniciadoEn(System.currentTimeMillis());
+        iniciarTimerDeTurno(codigoSala);
         publishers.get(codigoSala).notificarCambio(partida);
         return true;
     }
@@ -200,6 +236,8 @@ public class JuegoManager {
         }
 
         System.out.println("Reiniciando partida en sala " + codigoSala);
+
+        TurnoScheduler.getInstance().cancelarTurno(codigoSala);
 
         for (Jugador j : partida.getJugadores()) {
             j.getMano().clear();
@@ -216,6 +254,7 @@ public class JuegoManager {
         partida.setTurnoActual(0);
         partida.setSentidoJuego(Sentido.HORARIO);
         partida.setCartasAComer(0);
+        partida.setTurnoIniciadoEn(0);
         partida.setEstado(EstadoPartida.ESPERANDO_JUGADORES);
 
         publishers.get(codigoSala).notificarCambio(partida);
@@ -230,6 +269,44 @@ public class JuegoManager {
         partida.getMazo().barajar();
         viejas.clear();
         viejas.add(actual);
+    }
+
+    private void aplicarPenalizacionUnoSiAplica(Partida partida) {
+        for (Jugador j : partida.getJugadores()) {
+            if (j.getMano().size() == 1 && !j.isDijoUNO()) {
+                System.out.println("¡PENALIZACIÓN UNO! " + j.getNombre() + " no dijo UNO. Recibe 2 cartas.");
+                for (int i = 0; i < 2; i++) {
+                    if (partida.getMazo().getCartasRestantes() == 0) reciclarMazo(partida);
+                    Carta carta = partida.getMazo().robar();
+                    if (carta != null) j.getMano().add(carta);
+                }
+            }
+        }
+    }
+
+    private void iniciarTimerDeTurno(String codigoSala) {
+        TurnoScheduler.getInstance().iniciarTurno(codigoSala, () -> {
+            synchronized (this) {
+                Partida partida = partidas.get(codigoSala);
+                if (partida == null) return;
+                if (partida.getEstado() != EstadoPartida.EN_CURSO) return;
+
+                int idx = partida.getTurnoActual();
+                if (idx < partida.getJugadores().size()) {
+                    Jugador jugadorLento = partida.getJugadores().get(idx);
+                    System.out.println("Timeout de turno: " + jugadorLento.getNombre() + " roba 1 carta de penalización");
+                    if (partida.getMazo().getCartasRestantes() == 0) reciclarMazo(partida);
+                    Carta carta = partida.getMazo().robar();
+                    if (carta != null) jugadorLento.getMano().add(carta);
+                }
+
+                avanzarTurno(partida);
+                partida.setTurnoIniciadoEn(System.currentTimeMillis());
+                iniciarTimerDeTurno(codigoSala);
+
+                publishers.get(codigoSala).notificarCambio(partida);
+            }
+        });
     }
 
     public synchronized void agregarJugador(String codigoSala, Jugador jugador) {
@@ -284,10 +361,11 @@ public class JuegoManager {
         publishers.get(codigoSala).notificarCambio(partida);
     }
 
-    private void verificarGanador(Partida partida, Jugador jugador) {
+    private void verificarGanador(Partida partida, Jugador jugador, String codigoSala) {
         if (jugador.getMano().isEmpty()) {
             System.out.println("¡" + jugador.getNombre() + " ha ganado!");
             partida.setEstado(EstadoPartida.FINALIZADA);
+            TurnoScheduler.getInstance().cancelarTurno(codigoSala);
         }
     }
 }
