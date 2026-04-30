@@ -39,6 +39,7 @@ public class GameController {
                 case "TIRAR_CARTA"       -> manejarTirarCarta(mensaje, handler);
                 case "TIRAR_COMODIN"     -> manejarTirarComodin(mensaje, handler);
                 case "ROBAR_CARTA"       -> manejarRobar(handler);
+                case "REINICIAR_PARTIDA" -> manejarReiniciarPartida(handler);
                 case "DECIR_UNO"         -> manejarDecirUno(handler);
                 case "ABANDONAR_SALA"    -> manejarAbandonar(handler);
                 case "SOLICITAR_ESTADO"  -> manejarSolicitarEstado(handler);
@@ -253,13 +254,37 @@ public class GameController {
         System.out.println(handler.getJugador().getNombre() + " dijo UNO!");
     }
 
-    private void manejarAbandonar(ClientHandler handler) {
-        String codigo = handler.getCodigoSala();
-        if (codigo != null && handler.getJugador() != null) {
-            PartidaPublisher pub = JuegoManager.getInstance().getPublisher(codigo);
-            if (pub != null) pub.desuscribir(handler);
-            JuegoManager.getInstance().removerJugador(codigo, handler.getJugador());
+    private void manejarReiniciarPartida(ClientHandler handler) {
+        if (handler.getJugador() == null) {
+            handler.enviarError("No estás en una sala");
+            return;
         }
+        if (!handler.getJugador().isEsAnfitrion()) {
+            handler.enviarError("Solo el anfitrión puede reiniciar la partida");
+            return;
+        }
+        String codigoSala = handler.getCodigoSala();
+        boolean reiniciada = JuegoManager.getInstance().reiniciarPartida(codigoSala);
+        if (!reiniciada) {
+            handler.enviarError("No se puede reiniciar la partida en este momento");
+        } else {
+            System.out.println("Partida reiniciada por anfitrión en sala " + codigoSala);
+        }
+    }
+
+    private void manejarAbandonar(ClientHandler handler) {
+        if (handler.getJugador() == null) return;
+
+        String codigoSala = handler.getCodigoSala();
+        Jugador jugador = handler.getJugador();
+
+        System.out.println("Jugador " + jugador.getNombre() + " abandona sala " + codigoSala);
+
+        JuegoManager.getInstance().removerJugador(codigoSala, jugador);
+
+        PartidaPublisher pub = JuegoManager.getInstance().getPublisher(codigoSala);
+        if (pub != null) pub.desuscribir(handler);
+
         handler.setJugador(null);
         handler.setCodigoSala(null);
     }

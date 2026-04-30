@@ -190,6 +190,38 @@ public class JuegoManager {
         return true;
     }
 
+    public synchronized boolean reiniciarPartida(String codigoSala) {
+        Partida partida = partidas.get(codigoSala);
+        if (partida == null) return false;
+
+        if (partida.getEstado() != EstadoPartida.FINALIZADA) {
+            System.out.println("No se puede reiniciar: la partida no ha terminado");
+            return false;
+        }
+
+        System.out.println("Reiniciando partida en sala " + codigoSala);
+
+        for (Jugador j : partida.getJugadores()) {
+            j.getMano().clear();
+            j.setDijoUNO(false);
+            if (!j.isEsAnfitrion()) {
+                j.setListo(false);
+            }
+        }
+
+        partida.getMazo().getCartas().clear();
+        partida.getPilaDescarte().getCartas().clear();
+        partida.getPilaDescarte().setColorActivo(null);
+        partida.getPilaDescarte().setValorActivo(null);
+        partida.setTurnoActual(0);
+        partida.setSentidoJuego(Sentido.HORARIO);
+        partida.setCartasAComer(0);
+        partida.setEstado(EstadoPartida.ESPERANDO_JUGADORES);
+
+        publishers.get(codigoSala).notificarCambio(partida);
+        return true;
+    }
+
     private void reciclarMazo(Partida partida) {
         PilaDescarte pila = partida.getPilaDescarte();
         List<Carta> viejas = pila.getCartas();
