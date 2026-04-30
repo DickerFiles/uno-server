@@ -9,6 +9,7 @@ import org.borradoruno.server.validation.GameStateValidator;
 import org.borradoruno.server.validation.InputValidator;
 import org.borradoruno.server.validation.ValidationResult;
 import org.borradoruno.shared.models.*;
+import org.borradoruno.shared.models.Avatar;
 import org.borradoruno.shared.network.Mensaje;
 
 public class GameController {
@@ -52,18 +53,43 @@ public class GameController {
 
     private void manejarCreate(Mensaje mensaje, ClientHandler handler) {
         if (mensaje.getDatos() == null) {
-            handler.enviarError("El nombre no puede ser null");
+            handler.enviarError("CREATE requiere datos");
             return;
         }
-        String nombre = (String) mensaje.getDatos();
+
+        JsonArray arr;
+        try {
+            arr = gson.toJsonTree(mensaje.getDatos()).getAsJsonArray();
+        } catch (Exception e) {
+            handler.enviarError("CREATE requiere [nombre, avatar]");
+            return;
+        }
+
+        if (arr.size() != 2) {
+            handler.enviarError("CREATE requiere exactamente 2 elementos: [nombre, avatar]");
+            return;
+        }
+
+        String nombre = arr.get(0).getAsString();
+        String avatarStr = arr.get(1).getAsString();
+
         ValidationResult nicknameResult = InputValidator.validateNickname(nombre);
         if (!nicknameResult.isValid()) {
             handler.enviarError(nicknameResult.getErrorMessage());
             return;
         }
 
+        Avatar avatar;
+        try {
+            avatar = Avatar.valueOf(avatarStr.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            avatar = Avatar.AZUL;
+        }
+
         Partida nuevaSala = JuegoManager.getInstance().crearSala();
         Jugador jugador = new Jugador(nombre, handler.getRemoteAddress());
+        jugador.setEsAnfitrion(true);
+        jugador.setAvatar(avatar);
 
         handler.setJugador(jugador);
         handler.setCodigoSala(nuevaSala.getCodigoSala());
@@ -73,23 +99,24 @@ public class GameController {
 
     private void manejarJoin(Mensaje mensaje, ClientHandler handler) {
         if (mensaje.getDatos() == null) {
-            handler.enviarError("JOIN requiere [nombre, codigoSala]");
+            handler.enviarError("JOIN requiere [nombre, codigoSala, avatar]");
             return;
         }
         JsonArray arr;
         try {
             arr = gson.toJsonTree(mensaje.getDatos()).getAsJsonArray();
         } catch (Exception e) {
-            handler.enviarError("JOIN requiere datos en formato [nombre, codigoSala]");
+            handler.enviarError("JOIN requiere [nombre, codigoSala, avatar]");
             return;
         }
-        if (arr.size() != 2) {
-            handler.enviarError("JOIN requiere [nombre, codigoSala]");
+        if (arr.size() != 3) {
+            handler.enviarError("JOIN requiere exactamente 3 elementos: [nombre, codigoSala, avatar]");
             return;
         }
 
         String nombre = arr.get(0).getAsString();
         String codigoSala = arr.get(1).getAsString();
+        String avatarStr = arr.get(2).getAsString();
 
         ValidationResult nicknameResult = InputValidator.validateNickname(nombre);
         if (!nicknameResult.isValid()) {
@@ -115,7 +142,15 @@ public class GameController {
             return;
         }
 
+        Avatar avatar;
+        try {
+            avatar = Avatar.valueOf(avatarStr.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            avatar = Avatar.AZUL;
+        }
+
         Jugador jugador = new Jugador(nombre, handler.getRemoteAddress());
+        jugador.setAvatar(avatar);
         handler.setJugador(jugador);
         handler.setCodigoSala(codigoSala);
         JuegoManager.getInstance().getPublisher(codigoSala).suscribir(handler);
