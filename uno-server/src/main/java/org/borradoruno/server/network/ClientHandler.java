@@ -83,21 +83,40 @@ public class ClientHandler implements Runnable, PartidaObserver {
         } catch (SocketTimeoutException e) {
             System.out.println("Timeout de conexión: " + socket.getInetAddress());
         } catch (IOException e) {
-            System.out.println("Cliente desconectado: " + socket.getInetAddress());
+            // cliente desconectado
         } finally {
-            if (codigoSala != null) {
-                PartidaPublisher pub = JuegoManager.getInstance().getPublisher(codigoSala);
-                if (pub != null) pub.desuscribir(this);
-                if (jugador != null) {
-                    JuegoManager.getInstance().removerJugador(codigoSala, jugador);
-                }
-            }
-            server.removerCliente(this);
+            limpiarConexion();
+        }
+    }
+
+    private void limpiarConexion() {
+        if (codigoSala != null && jugador != null) {
             try {
-                socket.close();
-            } catch (IOException e) {
-                e.printStackTrace();
+                JuegoManager.getInstance().removerJugador(codigoSala, jugador);
+                System.out.println("Jugador " + jugador.getNombre() + " removido de sala " + codigoSala);
+
+                Partida sala = JuegoManager.getInstance().getPartida(codigoSala);
+                if (sala != null && sala.getJugadores().isEmpty()) {
+                    JuegoManager.getInstance().eliminarSala(codigoSala);
+                }
+            } catch (Exception e) {
+                System.err.println("Error limpiando jugador: " + e.getMessage());
             }
+        }
+
+        if (codigoSala != null) {
+            PartidaPublisher pub = JuegoManager.getInstance().getPublisher(codigoSala);
+            if (pub != null) pub.desuscribir(this);
+        }
+
+        server.removerCliente(this);
+
+        try {
+            if (socket != null && !socket.isClosed()) {
+                socket.close();
+            }
+        } catch (IOException e) {
+            // ignore
         }
     }
 
